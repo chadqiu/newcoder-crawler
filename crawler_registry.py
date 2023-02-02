@@ -6,7 +6,6 @@ import re
 import pymysql
 import smtplib
 import nacos
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from email.mime.text import MIMEText
 
 def get_newcoder_page(page = 1, keyword = "补录"):
@@ -26,7 +25,7 @@ def get_newcoder_page(page = 1, keyword = "补录"):
 
 def parse_newcoder_page(data, skip_words = [], start_date = '2023'):
     assert data['success'] == True
-    pattern = re.compile("|".join(skip_words), re.I) 
+    pattern = re.compile("|".join(skip_words)) 
     res = []
     for x in data['data']['records']:
         x = x['data']
@@ -110,22 +109,29 @@ def send_email(insert_data, update_data, mail_host, mail_user, mail_pass, sender
     except smtplib.SMTPException as e:
         print('email send error: ', e)  
         return False    
-    
-def batch_generate(texts, tokenizer, model, id2label = {0: '招聘信息', 1: '经验贴', 2: '求助贴'}, max_length = 128):
-    inputs = tokenizer( texts, return_tensors="pt", max_length=128, padding=True, truncation=True)
-    outputs = model(**inputs).logits.argmax(-1).tolist()
-    return [id2label[x] for x in outputs]
 
-def model_predict(text_list, model_name = "roberta4h512", batch_size = 16):
-    if not text_list: return []
-    model = AutoModelForSequenceClassification.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model.eval()
-    result, start = [], 0
-    while(start < len(text_list)):
-        result.extend(batch_generate(text_list[start : start + batch_size], tokenizer, model))
-        start += batch_size
-    return result
+def run(keywords, skip_words, db_config, mail_config = None):
+    res = []
+    for key in keywords:
+        print(key, time.strftime("%Y-%m-%d %H:%M:%S"))
+        for i in range(1, 11):
+            print(i)
+            a = get_newcoder_page(i, key)
+            b = parse_newcoder_page(a, skip_words)
+            if b == None or len(b) < 1: break
+            res.extend(b)
+            time.sleep(1)
+    
+    result, ids = [], set()  # 去重
+    for x in res:
+        if x['id'] in ids: continue
+        ids.add(x['id'])
+        result.append(x)
+
+    print("total num: ", len(result))
+    x = upsert_to_db(result, **db_config)  # insert_data, update_data
+    if mail_config:
+        send_email(*x, **mail_config)
 
 def get_config(SERVER_ADDRESSES, NAMESPACE, GROUP):
     print(SERVER_ADDRESSES, NAMESPACE)
@@ -137,41 +143,10 @@ def get_config(SERVER_ADDRESSES, NAMESPACE, GROUP):
     mail_config= json.loads(client.get_config("newcoder.crawler.mail_config", GROUP))
     return keywords, skip_words, db_config, mail_config
 
-
-def run(keywords, skip_words, db_config, mail_config = None):
-    res = []
-    for key in keywords:
-        print(key, time.strftime("%Y-%m-%d %H:%M:%S"))
-        for i in range(1, 31):
-            print(i)
-            a = get_newcoder_page(i, key)
-            b = parse_newcoder_page(a, skip_words, 
-                                    start_date = time.strftime("%Y-%m-%d", time.localtime(time.time() - 31 * 24 * 60 * 60)))
-            if b == None or len(b) < 1: break
-            res.extend(b)
-            time.sleep(1)
-            
-    res.sort(key = lambda x: len(x['content']))
-    labels = model_predict([(str(x['title']) if x['title'] else "" ) + "\t" +
-                            (str(x['content']) if x['content'] else "" ) for x in res])
-    result, ids = [], set()  # 去重 模型过滤
-    for i, x in enumerate(res):
-        if x['id'] in ids or labels[i] != "招聘信息": continue
-        ids.add(x['id'])
-        result.append(x)
-        
-    
-    print("total num: ", len(result))
-    #print(result)
-    x = upsert_to_db(result, **db_config)  # insert_data, update_data
-    
-    if mail_config:
-        send_email(*x, **mail_config)
-        
 def main():
-    SERVER_ADDRESSES = "your nacos affress"
-    NAMESPACE = "your nacos namespace"
-    GROUP= "your nacos group"
+    SERVER_ADDRESSES = "ip:port"
+    NAMESPACE = "your namespace"
+    GROUP= "your group"
     
     run(*get_config(SERVER_ADDRESSES, NAMESPACE, GROUP))
 
