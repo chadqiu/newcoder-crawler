@@ -19,4 +19,5 @@ test.csv为人工标注的数据。
 historical_data.py为从牛客网爬取的近4万条无标签数据，
 generated_pesudo_data.csv为使用训练后的uer roberta-large模型标注生成的数据。
 roberta4h512保存的是最终用来部署的roberta-small模型，其在test.csv测试集的表现如下：
-![](https://chadqiu.github.io/images/newcoder_f1.png)
+
+![f1 score](https://chadqiu.github.io/images/newcoder_f1.png)
