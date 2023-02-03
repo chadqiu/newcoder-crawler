@@ -13,11 +13,12 @@ metric = evaluate.load("seqeval")
 
 #  hfl/rbt3
 #  uer/chinese_roberta_L-4_H-512
-model_name = "/root/autodl-tmp/l3h512"
+#  uer/roberta-large-wwm-chinese-cluecorpussmall
+model_name = "uer/chinese_roberta_L-4_H-512"
 # model = AutoModelForMaskedLM.from_pretrained(model_name)
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-raw_datasets = load_dataset('csv', data_files={'train': 'generate_l3.csv', 'test': 'test.csv'})
+raw_datasets = load_dataset('csv', data_files={'train': 'train.csv', 'test': 'test.csv'})
 
 max_input_length = 128
 max_target_length = 20
@@ -68,7 +69,6 @@ training_args = TrainingArguments(
     f"/root/autodl-tmp/run",
     evaluation_strategy = "epoch",
     save_strategy = "epoch",
-    # gradient_checkpointing=True,
     learning_rate=2e-4,
     per_device_train_batch_size=batch_size,
     per_device_eval_batch_size=batch_size,
@@ -79,40 +79,10 @@ training_args = TrainingArguments(
     load_best_model_at_end=True,
     metric_for_best_model=metric_name,
     fp16=True,
-    #push_to_hub=True,
 )
 
 
-import bitsandbytes as bnb
-from torch import nn
-from transformers.trainer_pt_utils import get_parameter_names
 
-# training_args = TrainingArguments(per_device_train_batch_size=4, **default_args)
-
-decay_parameters = get_parameter_names(model, [nn.LayerNorm])
-decay_parameters = [name for name in decay_parameters if "bias" not in name]
-optimizer_grouped_parameters = [
-    {
-        "params": [p for n, p in model.named_parameters() if n in decay_parameters],
-        "weight_decay": training_args.weight_decay,
-    },
-    {
-        "params": [p for n, p in model.named_parameters() if n not in decay_parameters],
-        "weight_decay": 0.0,
-    },
-]
-
-optimizer_kwargs = {
-    "betas": (training_args.adam_beta1, training_args.adam_beta2),
-    "eps": training_args.adam_epsilon,
-}
-optimizer_kwargs["lr"] = training_args.learning_rate
-adam_bnb_optim = bnb.optim.Adam8bit(
-    optimizer_grouped_parameters,
-    betas=(training_args.adam_beta1, training_args.adam_beta2),
-    eps=training_args.adam_epsilon,
-    lr=training_args.learning_rate,
-)
 
 trainer = Trainer(
     model,
@@ -120,36 +90,12 @@ trainer = Trainer(
     train_dataset=tokenized_datasets["train"],
     eval_dataset=tokenized_datasets["test"],
     tokenizer=tokenizer,
-    compute_metrics=compute_metrics,
-    optimizers=(adam_bnb_optim, None)
+    compute_metrics=compute_metrics
 )
 
-# trainer.train()
+trainer.train()
 
 
-# from accelerate import Accelerator
-# from torch.utils.data.dataloader import DataLoader
-# tokenized_datasets['train'].set_format("pt")
-# dataloader = DataLoader(tokenized_datasets['train'], batch_size=training_args.per_device_train_batch_size)
-
-# if training_args.gradient_checkpointing:
-#     model.gradient_checkpointing_enable()
-
-# accelerator = Accelerator(fp16=training_args.fp16)
-# model, optimizer, dataloader = accelerator.prepare(model, adam_bnb_optim, dataloader)
-
-# model.train()
-# for i in range(training_args.num_train_epochs):
-#     for step, batch in enumerate(dataloader, start=1):
-#         loss = model(**batch).loss
-#         loss = loss / training_args.gradient_accumulation_steps
-#         accelerator.backward(loss)
-#         if step % training_args.gradient_accumulation_steps == 0:
-#             optimizer.step()
-#             optimizer.zero_grad()
-  
-
-# model = AutoModelForMaskedLM.from_pretrained("/root/autodl-tmp/Deberta")
 print("test")
 print(trainer.evaluate())
 # trainer.save_model("bert")
@@ -160,6 +106,3 @@ predictions = np.argmax(predictions, axis=-1)
 print(predictions)
 print(labels)
 
-#  uer  64  914  933
-#  uer2  64  914
-#  l3 64 90

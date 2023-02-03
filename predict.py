@@ -5,15 +5,15 @@ from datasets import Dataset, DatasetDict
 
 data = pd.read_excel("historical_data.xlsx", sheet_name=0).fillna(" ")
 
-raw_datasets = DatasetDict()
-raw_datasets['test'] = Dataset.from_pandas(data)
-
-model_name = "/root/autodl-tmp/roberta"
+model_name = "roberta4h512"
 model = AutoModelForSequenceClassification.from_pretrained(model_name)
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-device = "cuda:0"
-model.half()
+if torch.cuda.is_available():
+    device = "cuda:0"
+    model.half()
+else:
+    device = "cpu"
 model = model.to(device)
 
 s = "秋招大结局（泪目了）。家人们泪目了，一波三折之后获得的小奖状，已经准备春招了，没想到被捞啦，嗐，总之是有个结果，还是很开心的[掉小珍珠了][掉小珍珠了]"
@@ -31,12 +31,11 @@ def get_answer(text):
     text = [x for x in text]
     inputs = tokenizer( text, return_tensors="pt", max_length=max_target_length, padding=True, truncation=True)
     inputs = {k:v.to(device) for k,v in inputs.items()}
-    # print(inputs)
     with torch.no_grad():
         outputs = model(**inputs).logits.argmax(-1).tolist()
     return outputs
 
-data['text'] = data['title'].apply(str) + data['content'].apply(str)
+data['text'] = data['title'].apply(lambda x : str(x) if x else "") + data['content'].apply(lambda x : str(x) if x else "")
 
 # print(get_answer(data['text'][:10]))
 
